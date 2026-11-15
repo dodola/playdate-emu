@@ -1,4 +1,5 @@
 #include "CrankDevicePawn.h"
+#include "CrankLocale.h"
 #include "CrankRuntimeComponent.h"
 #include "CrankLauncher.h"
 #include "CrankTranslation.h"
@@ -889,6 +890,7 @@ void ACrankDevicePawn::LoadExperience() {
     Object->TryGetBoolField(TEXT("motionFollow"),bMotionFollow); Object->TryGetBoolField(TEXT("haptics"),bHaptics);
     Object->TryGetBoolField(TEXT("reducedMotion"),bReducedMotion); Object->TryGetBoolField(TEXT("crankDocked"),bCrankDocked);
     Object->TryGetBoolField(TEXT("immersive"),bImmersive);
+    bool bEnglishUI=false; if(Object->TryGetBoolField(TEXT("englishUI"),bEnglishUI)) CrankLocale::SetEnglish(bEnglishUI);
     double Number;
     if(Object->TryGetNumberField(TEXT("motionSensitivity"),Number) && FMath::IsFinite(Number)) MotionSensitivity=FMath::Clamp(float(Number),.1f,.8f);
     if(Object->TryGetNumberField(TEXT("hapticStrength"),Number) && FMath::IsFinite(Number)) HapticStrength=FMath::Clamp(float(Number),.1f,1.f);
@@ -902,6 +904,7 @@ void ACrankDevicePawn::SaveExperience() {
     Object->SetBoolField(TEXT("motionFollow"),bMotionFollow); Object->SetBoolField(TEXT("haptics"),bHaptics);
     Object->SetBoolField(TEXT("reducedMotion"),bReducedMotion); Object->SetBoolField(TEXT("crankDocked"),bCrankDocked);
     Object->SetBoolField(TEXT("immersive"),bImmersive);
+    Object->SetBoolField(TEXT("englishUI"),CrankLocale::IsEnglish());
     Object->SetNumberField(TEXT("motionSensitivity"),MotionSensitivity); Object->SetNumberField(TEXT("hapticStrength"),HapticStrength);
     Object->SetNumberField(TEXT("frameRate"),FrameRate); Object->SetNumberField(TEXT("resolutionScale"),ResolutionScale);
     TArray<TSharedPtr<FJsonValue>> Recent; for(const auto& Path:RecentGames) Recent.Add(MakeShared<FJsonValueString>(Path));
@@ -910,9 +913,16 @@ void ACrankDevicePawn::SaveExperience() {
     IFileManager::Get().MakeDirectory(*FPaths::GetPath(ExperienceFile),true);
     const FString Temporary=ExperienceFile+TEXT(".tmp");
     if(!FFileHelper::SaveStringToFile(Text,*Temporary) || !IFileManager::Get().Move(*ExperienceFile,*Temporary,true,true)) {
-        ExperienceError=TEXT("设置无法保存，请检查可用存储空间。");
+        ExperienceError=CrankLocale::Tr(TEXT("设置无法保存，请检查可用存储空间。"),TEXT("Settings could not be saved. Check storage."));
         UE_LOG(LogTemp,Warning,TEXT("Crank experience settings could not be committed"));
     } else ExperienceError.Empty();
+}
+void ACrankDevicePawn::SetEnglishUI(bool Enabled) {
+    CrankLocale::SetEnglish(Enabled);
+    SaveExperience();
+}
+bool ACrankDevicePawn::IsEnglishUI() const {
+    return CrankLocale::IsEnglish();
 }
 
 bool ACrankDevicePawn::IsGameRunning() const {return Runtime->IsRunning();}
@@ -938,17 +948,20 @@ void ACrankDevicePawn::ApplySystemPause() {
 TArray<FString> ACrankDevicePawn::GetSystemRows() const {
     TArray<FString> Rows;
     if(SystemMode==ECrankSystemMode::Menu) {
-        Rows.Add(TEXT("继续游戏"));
+        Rows.Add(CrankLocale::Tr(TEXT("继续游戏"),TEXT("Resume Game")));
         for(const auto& Item:Runtime->MenuItems) {
             FString Value;
-            if(Item.Kind==1) Value=Item.Value ? TEXT("  [开启]") : TEXT("  [关闭]");
+            if(Item.Kind==1) Value=Item.Value ? CrankLocale::Tr(TEXT("  [开启]"),TEXT("  [ON]")) : CrankLocale::Tr(TEXT("  [关闭]"),TEXT("  [OFF]"));
             if(Item.Kind==2 && Item.Options.IsValidIndex(Item.Value-1)) Value=TEXT("  ")+Item.Options[Item.Value-1];
             Rows.Add(Item.Title+Value);
         }
-        Rows.Add(TEXT("重新启动游戏")); Rows.Add(bDefaultLauncher ? (CurrentGameDirectory==LauncherDirectory ? TEXT("本地游戏库") : TEXT("返回 PDGames")) : TEXT("返回桌面")); Rows.Add(TEXT("体验设置"));
+        Rows.Add(CrankLocale::Tr(TEXT("重新启动游戏"),TEXT("Restart Game")));
+        Rows.Add(bDefaultLauncher ? (CurrentGameDirectory==LauncherDirectory ? CrankLocale::Tr(TEXT("本地游戏库"),TEXT("Local Library")) : CrankLocale::Tr(TEXT("返回 PDGames"),TEXT("Back to PDGames"))) : CrankLocale::Tr(TEXT("返回桌面"),TEXT("Back to Home")));
+        Rows.Add(CrankLocale::Tr(TEXT("体验设置"),TEXT("Settings")));
     } else if(SystemMode==ECrankSystemMode::Home) {
         for(const auto& Game:GetGameDirectories()) Rows.Add(GetTitleForGame(Game));
-        Rows.Add(TEXT("游戏库 / 导入")); Rows.Add(TEXT("体验设置"));
+        Rows.Add(CrankLocale::Tr(TEXT("游戏库 / 导入"),TEXT("Library / Import")));
+        Rows.Add(CrankLocale::Tr(TEXT("体验设置"),TEXT("Settings")));
     }
     return Rows;
 }

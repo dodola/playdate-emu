@@ -66,6 +66,8 @@ public:
     float GetHapticStrength() const { return HapticStrength; }
     void SetReducedMotion(bool Enabled);
     bool IsReducedMotion() const { return bReducedMotion; }
+    void SetEnglishUI(bool Enabled);
+    bool IsEnglishUI() const;
     void PulseHaptic(bool CrankTick=false);
     void TurnCrank(float Degrees);
     float GetCrankAngle() const { return CrankAngle; }
