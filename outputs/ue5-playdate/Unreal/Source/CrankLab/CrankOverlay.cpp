@@ -80,9 +80,12 @@ TSharedRef<SWidget> SCrankOverlay::BuildItchSettings() {
     Box->AddSlot().AutoHeight().Padding(0,0,0,8)
     [SNew(SHorizontalBox)
      +SHorizontalBox::Slot().FillWidth(1).Padding(0,0,6,0)
-     [Action(CrankLocale::Text(TEXT("粘贴 API 密钥"),TEXT("Paste API Key")),[this]{return OnPasteItchApiKey();},false,ECrankGlyph::Settings)]
+     [Action(CrankLocale::Text(TEXT("网页快捷登录"),TEXT("Web Login")),[this]{return OnOpenItchWebLogin();},false,ECrankGlyph::Menu)]
      +SHorizontalBox::Slot().FillWidth(1)
-     [Action(CrankLocale::Text(TEXT("同步已购游戏"),TEXT("Sync Library")),[this]{return OnSyncItchLibrary();},false,ECrankGlyph::Library)]];
+     [Action(CrankLocale::Text(TEXT("粘贴 API 密钥"),TEXT("Paste API Key")),[this]{return OnPasteItchApiKey();},false,ECrankGlyph::Settings)]];
+
+    Box->AddSlot().AutoHeight().Padding(0,0,0,8)
+    [Action(CrankLocale::Text(TEXT("同步已购游戏"),TEXT("Sync Library")),[this]{return OnSyncItchLibrary();},false,ECrankGlyph::Library)];
 
     Box->AddSlot().AutoHeight()
     [SNew(SBox).Visibility_Lambda([this]{
@@ -108,6 +111,12 @@ FText SCrankOverlay::GetItchStatusText() const {
         TEXT("未连接。从 itch.io/user/settings/api-keys 复制 API 密钥后，点按“粘贴 API 密钥”即可同步已购的 Playdate 游戏。"),
         TEXT("Not connected. Copy an API key from itch.io/user/settings/api-keys, then tap 'Paste API Key' to sync owned Playdate games.")
     ));
+}
+
+FReply SCrankOverlay::OnOpenItchWebLogin() {
+    if(!Device.IsValid() || !Device->GetItchService().IsValid()) return FReply::Handled();
+    Device->GetItchService()->BeginWebLogin();
+    return FReply::Handled();
 }
 
 FReply SCrankOverlay::OnPasteItchApiKey() {
@@ -448,6 +457,17 @@ FReply SCrankOverlay::OnKeyDown(const FGeometry& Geometry,const FKeyEvent& Event
 }
 void SCrankOverlay::Tick(const FGeometry& Geometry,double Time,float DeltaTime) {
     SCompoundWidget::Tick(Geometry,Time,DeltaTime);
+    if(Device.IsValid() && Device->GetItchService().IsValid() && Device->GetItchService()->IsWebLoginActive()) {
+        Device->GetItchService()->PollWebLogin([this](bool bSuccess, const FString& KeyOrErr) {
+            if(bSuccess && Device.IsValid()) {
+                Device->SaveExperience();
+                Device->PulseHaptic();
+                Device->GetItchService()->SyncOwnedLibrary(FOnItchSyncCompleted::CreateLambda([this](bool bSyncOk, const FString& Msg) {
+                    RefreshGames();
+                }));
+            }
+        });
+    }
     const float Alpha=Device.IsValid() && Device->IsReducedMotion() ? 1.f : CrankView::SmoothAlpha(16,DeltaTime);
     PanelBlend=FMath::Lerp(PanelBlend,bLibraryOpen || bSettingsOpen ? 1.f : 0.f,Alpha);
     PanelContainer->SetRenderOpacity(PanelBlend);

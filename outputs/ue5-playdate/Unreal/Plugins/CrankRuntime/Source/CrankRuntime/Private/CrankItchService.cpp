@@ -1,6 +1,10 @@
 #include "CrankItchService.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "HAL/PlatformProcess.h"
+#if PLATFORM_ANDROID
+#include "Android/AndroidJavaEnv.h"
+#endif
 
 FCrankItchService::FCrankItchService() {
 }
@@ -231,4 +235,93 @@ void FCrankItchService::ResolveDownloadUrl(int64 DownloadKeyId, int64 UploadId, 
     });
 
     Request->ProcessRequest();
+}
+
+void FCrankItchService::BeginWebLogin() {
+#if PLATFORM_ANDROID
+    JNIEnv* Env = AndroidJavaEnv::GetJavaEnv();
+    if (!Env) return;
+    jclass Class = AndroidJavaEnv::FindJavaClass("com.cranklab.CrankItchAuth");
+    if (!Class) return;
+    jmethodID Method = Env->GetStaticMethodID(Class, "openLogin", "(Landroid/app/Activity;)V");
+    if (Method) {
+        Env->CallStaticVoidMethod(Class, Method, AndroidJavaEnv::GetGameActivityThis());
+        bWebLoginPending = true;
+        StatusMessage = TEXT("Browser login opened...");
+    }
+    if (Env->ExceptionCheck()) Env->ExceptionClear();
+    Env->DeleteLocalRef(Class);
+#else
+    FPlatformProcess::LaunchURL(TEXT("https://itch.io/user/settings/api-keys"), nullptr, nullptr);
+    StatusMessage = TEXT("Opened itch.io in browser. Copy your API key, then tap Paste API Key.");
+#endif
+}
+
+void FCrankItchService::CloseWebLogin() {
+#if PLATFORM_ANDROID
+    JNIEnv* Env = AndroidJavaEnv::GetJavaEnv();
+    if (!Env) return;
+    jclass Class = AndroidJavaEnv::FindJavaClass("com.cranklab.CrankItchAuth");
+    if (!Class) return;
+    jmethodID Method = Env->GetStaticMethodID(Class, "close", "()V");
+    if (Method) Env->CallStaticVoidMethod(Class, Method);
+    if (Env->ExceptionCheck()) Env->ExceptionClear();
+    Env->DeleteLocalRef(Class);
+#endif
+    bWebLoginPending = false;
+}
+
+bool FCrankItchService::IsWebLoginActive() const {
+    return bWebLoginPending;
+}
+
+void FCrankItchService::PollWebLogin(TFunction<void(bool bSuccess, const FString& KeyOrError)> OnResult) {
+#if PLATFORM_ANDROID
+    if (!bWebLoginPending) return;
+    JNIEnv* Env = AndroidJavaEnv::GetJavaEnv();
+    if (!Env) return;
+    jclass Class = AndroidJavaEnv::FindJavaClass("com.cranklab.CrankItchAuth");
+    if (!Class) return;
+    jmethodID Method = Env->GetStaticMethodID(Class, "poll", "()[Ljava/lang/String;");
+    auto Array = Method ? static_cast<jobjectArray>(Env->CallStaticObjectMethod(Class, Method)) : nullptr;
+    if (Array && Env->GetArrayLength(Array) >= 3) {
+        auto S0 = static_cast<jstring>(Env->GetObjectArrayElement(Array, 0));
+        auto S1 = static_cast<jstring>(Env->GetObjectArrayElement(Array, 1));
+        auto S2 = static_cast<jstring>(Env->GetObjectArrayElement(Array, 2));
+
+        const char* C0 = S0 ? Env->GetStringUTFChars(S0, nullptr) : nullptr;
+        const char* C1 = S1 ? Env->GetStringUTFChars(S1, nullptr) : nullptr;
+        const char* C2 = S2 ? Env->GetStringUTFChars(S2, nullptr) : nullptr;
+
+        FString StateStr = C0 ? UTF8_TO_TCHAR(C0) : TEXT("0");
+        FString KeyStr = C1 ? UTF8_TO_TCHAR(C1) : TEXT("");
+        FString MsgStr = C2 ? UTF8_TO_TCHAR(C2) : TEXT("");
+
+        if (C0) Env->ReleaseStringUTFChars(S0, C0);
+        if (C1) Env->ReleaseStringUTFChars(S1, C1);
+        if (C2) Env->ReleaseStringUTFChars(S2, C2);
+
+        if (S0) Env->DeleteLocalRef(S0);
+        if (S1) Env->DeleteLocalRef(S1);
+        if (S2) Env->DeleteLocalRef(S2);
+
+        int32 State = FCString::Atoi(*StateStr);
+        if (State == 2 && !KeyStr.IsEmpty()) {
+            bWebLoginPending = false;
+            jmethodID ResetMethod = Env->GetStaticMethodID(Class, "reset", "()V");
+            if (ResetMethod) Env->CallStaticVoidMethod(Class, ResetMethod);
+            SetApiKey(KeyStr);
+            OnResult(true, KeyStr);
+        } else if (State == 3 || State == 4) {
+            bWebLoginPending = false;
+            jmethodID ResetMethod = Env->GetStaticMethodID(Class, "reset", "()V");
+            if (ResetMethod) Env->CallStaticVoidMethod(Class, ResetMethod);
+            StatusMessage = MsgStr;
+            OnResult(false, MsgStr);
+        }
+    }
+    if (Env->ExceptionCheck()) Env->ExceptionClear();
+    if (Array) Env->DeleteLocalRef(Array);
+    Env->DeleteLocalRef(Class);
+#endif
 }

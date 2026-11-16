@@ -47,7 +47,13 @@ public:
 
     void ClearAccount();
 
+    void BeginWebLogin();
+    void CloseWebLogin();
+    bool IsWebLoginActive() const;
+    void PollWebLogin(TFunction<void(bool bSuccess, const FString& KeyOrError)> OnResult);
+
 private:
+    bool bWebLoginPending = false;
     FString ApiKey;
     FString Username;
     bool bAuthenticated = false;

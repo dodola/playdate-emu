@@ -20,6 +20,7 @@ private:
     TSharedRef<SWidget> BuildSettings();
     TSharedRef<SWidget> BuildTranslationSettings();
     TSharedRef<SWidget> BuildItchSettings();
+    FReply OnOpenItchWebLogin();
     FReply OnPasteItchApiKey();
     FReply OnSyncItchLibrary();
     FReply OnClearItchAccount();
