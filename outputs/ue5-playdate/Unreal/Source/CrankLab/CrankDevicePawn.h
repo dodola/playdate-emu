@@ -17,6 +17,7 @@ class UTexture2D;
 class UTexture;
 class FCrankLauncher;
 class FCrankTranslation;
+class FCrankItchService;
 enum class ECrankSystemMode : uint8 {Boot,Home,Playing,Menu,Locked,Loading};
 
 UCLASS()
@@ -43,6 +44,7 @@ public:
     bool IsLauncherDownloadBusy() const;
     void CancelLauncherDownload();
     TSharedPtr<FCrankTranslation> GetTranslation() const {return Translation;}
+    TSharedPtr<FCrankItchService> GetItchService() const {return ItchService;}
     FString GetTitleForGame(const FString& Directory) const;
     FString GetGameTitle() const { return GameTitle; }
     TArray<FString> GetGameDirectories() const;
@@ -137,6 +139,7 @@ private:
     FString LauncherDirectory;
     TSharedPtr<FCrankLauncher> Launcher;
     TSharedPtr<FCrankTranslation> Translation;
+    TSharedPtr<FCrankItchService> ItchService;
     uint32 LauncherSession=0;
     int32 LauncherDetailId=0;
     bool bDefaultLauncher=false;

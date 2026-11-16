@@ -2,6 +2,8 @@
 #include "CrankTheme.h"
 #include "CrankLocale.h"
 #include "CrankTranslation.h"
+#include "CrankItchService.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSafeZone.h"
@@ -59,6 +61,92 @@ TSharedRef<SWidget> SCrankOverlay::BuildTranslationSettings() {
        .Label_Lambda([Service]{auto S=Service();return FText::FromString(S?S->ModelDownloadLabel(CrankLocale::IsEnglish()):FString());})
        .OnClicked_Lambda([Service]{if(auto S=Service()){if(S->IsModelBusy())S->CancelModelDownload();else S->DownloadModel();}return FReply::Handled();})]];
 }
+TSharedRef<SWidget> SCrankOverlay::BuildItchSettings() {
+    auto Box=SNew(SVerticalBox);
+
+    Box->AddSlot().AutoHeight().Padding(0,0,0,8)
+    [SNew(STextBlock).Text_Lambda([this]{return GetItchStatusText();})
+     .Font(CrankTheme::Utility())
+     .ColorAndOpacity_Lambda([this]{
+         return Device.IsValid() && Device->GetItchService().IsValid() && Device->GetItchService()->IsAuthenticated()
+             ? CrankTheme::Accent() : CrankTheme::HudMuted();
+     }).AutoWrapText(true)];
+
+    Box->AddSlot().AutoHeight().Padding(0,0,0,10)
+    [SNew(STextBlock).Text_Lambda([this]{
+        return FText::FromString(Device.IsValid() && Device->GetItchService().IsValid() ? Device->GetItchService()->GetStatusMessage() : FString());
+    }).Font(CrankTheme::Utility()).ColorAndOpacity(CrankTheme::HudText()).AutoWrapText(true)];
+
+    Box->AddSlot().AutoHeight().Padding(0,0,0,8)
+    [SNew(SHorizontalBox)
+     +SHorizontalBox::Slot().FillWidth(1).Padding(0,0,6,0)
+     [Action(CrankLocale::Text(TEXT("粘贴 API 密钥"),TEXT("Paste API Key")),[this]{return OnPasteItchApiKey();},false,ECrankGlyph::Settings)]
+     +SHorizontalBox::Slot().FillWidth(1)
+     [Action(CrankLocale::Text(TEXT("同步已购游戏"),TEXT("Sync Library")),[this]{return OnSyncItchLibrary();},false,ECrankGlyph::Library)]];
+
+    Box->AddSlot().AutoHeight()
+    [SNew(SBox).Visibility_Lambda([this]{
+        return Device.IsValid() && Device->GetItchService().IsValid() && Device->GetItchService()->HasApiKey()
+            ? EVisibility::Visible : EVisibility::Collapsed;
+    })
+     [Action(CrankLocale::Text(TEXT("清除密钥 / 注销"),TEXT("Clear Key / Sign Out")),[this]{return OnClearItchAccount();},false,ECrankGlyph::Reset)]];
+
+    return Box;
+}
+
+FText SCrankOverlay::GetItchStatusText() const {
+    if (!Device.IsValid() || !Device->GetItchService().IsValid()) {
+        return CrankLocale::Text(TEXT("服务未就绪"),TEXT("Service not ready")).Get();
+    }
+    auto Itch=Device->GetItchService();
+    if (Itch->IsAuthenticated()) {
+        return FText::FromString(FString::Printf(TEXT("%s: %s"),
+            CrankLocale::Tr(TEXT("已连接"),TEXT("Connected as")),
+            *Itch->GetUsername()));
+    }
+    return FText::FromString(CrankLocale::Tr(
+        TEXT("未连接。从 itch.io/user/settings/api-keys 复制 API 密钥后，点按“粘贴 API 密钥”即可同步已购的 Playdate 游戏。"),
+        TEXT("Not connected. Copy an API key from itch.io/user/settings/api-keys, then tap 'Paste API Key' to sync owned Playdate games.")
+    ));
+}
+
+FReply SCrankOverlay::OnPasteItchApiKey() {
+    if(!Device.IsValid() || !Device->GetItchService().IsValid()) return FReply::Handled();
+    FString Key;
+    FPlatformApplicationMisc::ClipboardPaste(Key);
+    Key.TrimStartAndEndInline();
+    if(Key.IsEmpty()) {
+        if(Device.IsValid()) Device->PulseHaptic();
+        return FReply::Handled();
+    }
+    Device->GetItchService()->VerifyApiKey(Key, FOnItchVerifyCompleted::CreateLambda([this](bool bSuccess, const FString& UserOrError) {
+        if(bSuccess && Device.IsValid()) {
+            Device->SaveExperience();
+            Device->PulseHaptic();
+            Device->GetItchService()->SyncOwnedLibrary(FOnItchSyncCompleted::CreateLambda([this](bool bSyncOk, const FString& Msg) {
+                RefreshGames();
+            }));
+        }
+    }));
+    return FReply::Handled();
+}
+
+FReply SCrankOverlay::OnSyncItchLibrary() {
+    if(!Device.IsValid() || !Device->GetItchService().IsValid()) return FReply::Handled();
+    Device->GetItchService()->SyncOwnedLibrary(FOnItchSyncCompleted::CreateLambda([this](bool bSuccess, const FString& Message) {
+        RefreshGames();
+    }));
+    return FReply::Handled();
+}
+
+FReply SCrankOverlay::OnClearItchAccount() {
+    if(!Device.IsValid() || !Device->GetItchService().IsValid()) return FReply::Handled();
+    Device->GetItchService()->ClearAccount();
+    Device->SaveExperience();
+    RefreshGames();
+    return FReply::Handled();
+}
+
 TSharedRef<SWidget> SCrankOverlay::BuildSettings() {
     auto Content=SNew(SVerticalBox);
     auto Toggle=[&](const TAttribute<FText>& Title,const TAttribute<FText>& Hint,TFunction<bool()> Value,TFunction<void(bool)> Change) {
@@ -141,6 +229,8 @@ TSharedRef<SWidget> SCrankOverlay::BuildSettings() {
      .Font(CrankTheme::Body()).ColorAndOpacity(CrankTheme::HudError()).AutoWrapText(true)];
     Content->AddSlot().AutoHeight().Padding(0,20,0,8)[HudText(CrankLocale::Text(TEXT("游戏介绍翻译"),TEXT("Game Description Translation")),true)];
     Content->AddSlot().AutoHeight()[BuildTranslationSettings()];
+    Content->AddSlot().AutoHeight().Padding(0,20,0,8)[HudText(CrankLocale::Text(TEXT("Itch.io 账号同步"),TEXT("Itch.io Library Sync")),true)];
+    Content->AddSlot().AutoHeight()[BuildItchSettings()];
     return Content;
 }
 void SCrankOverlay::Construct(const FArguments& Args) {
@@ -273,6 +363,31 @@ void SCrankOverlay::RefreshGames() {
             .OnClicked_Lambda([this,Path]{return ChooseGame(Path);})
             .IsEnabled_Lambda([this]{return Device.IsValid() && !Device->IsImportBusy() && !Device->IsGameSwitching();});
         GameButtons.Add(Row); GameRows->AddSlot().AutoHeight().Padding(0,0,0,8)[Row]; Index++;
+    }
+    if(Device.IsValid() && Device->GetItchService().IsValid()) {
+        const auto& ItchGames=Device->GetItchService()->GetOwnedGames();
+        if(ItchGames.Num()>0) {
+            GameRows->AddSlot().AutoHeight().Padding(0,16,0,8)[HudText(CrankLocale::Text(TEXT("Itch.io 已购游戏"),TEXT("Itch.io Owned Games")),true)];
+            for(const auto& Item:ItchGames) {
+                TSharedRef<SWidget> ItchRow=SNew(SCrankAction).Device(Device)
+                    .Label(FText::FromString(Item.Title))
+                    .Subtitle(FText::FromString(Item.Author.IsEmpty() ? TEXT("Itch.io") : Item.Author))
+                    .OnClicked_Lambda([this,Item]{
+                        if(Device.IsValid() && Device->GetItchService().IsValid()) {
+                            Device->GetItchService()->ResolveDownloadUrl(Item.DownloadKeyId,0,FOnItchDownloadResolved::CreateLambda([this](bool bOk,const FString& Url){
+                                if(bOk && Device.IsValid()) {
+#if PLATFORM_ANDROID
+                                    Device->BeginUrlGameImport(Url);
+#endif
+                                }
+                            }));
+                        }
+                        return FReply::Handled();
+                    });
+                GameButtons.Add(ItchRow);
+                GameRows->AddSlot().AutoHeight().Padding(0,0,0,8)[ItchRow];
+            }
+        }
     }
     FocusedGame=FMath::Clamp(FocusedGame,0,FMath::Max(0,GameButtons.Num()-1));
 }

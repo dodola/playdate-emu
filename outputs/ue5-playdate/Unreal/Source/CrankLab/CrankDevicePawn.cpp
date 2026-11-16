@@ -3,6 +3,7 @@
 #include "CrankRuntimeComponent.h"
 #include "CrankLauncher.h"
 #include "CrankTranslation.h"
+#include "CrankItchService.h"
 #include "CrankGameFiles.h"
 #include "CrankHaptics.h"
 #include "CrankOverlay.h"
@@ -137,6 +138,7 @@ void ACrankDevicePawn::BeginPlay() {
     ExperienceFile=FCrankGameFiles::Root()/TEXT("experience.json");
     if(!ProbeDirectory.IsEmpty()) ExperienceFile=ProbeDirectory/TEXT("experience.json");
     FParse::Value(FCommandLine::Get(),TEXT("CrankExperience="),ExperienceFile);
+    ItchService=MakeShared<FCrankItchService>();
     LoadExperience();
     ApplyPerformance();
     if (!ProbeDirectory.IsEmpty()) { bMotionFollow=false; bCrankDocked=false; }
@@ -894,6 +896,10 @@ void ACrankDevicePawn::LoadExperience() {
     bool bEnglishUI=false;
     Object->TryGetBoolField(TEXT("englishUI"),bEnglishUI);
     CrankLocale::SetEnglish(bEnglishUI);
+    FString ItchApiKey;
+    if(Object->TryGetStringField(TEXT("itchApiKey"),ItchApiKey) && !ItchApiKey.IsEmpty() && ItchService.IsValid()) {
+        ItchService->SetApiKey(ItchApiKey);
+    }
     double Number;
     if(Object->TryGetNumberField(TEXT("motionSensitivity"),Number) && FMath::IsFinite(Number)) MotionSensitivity=FMath::Clamp(float(Number),.1f,.8f);
     if(Object->TryGetNumberField(TEXT("hapticStrength"),Number) && FMath::IsFinite(Number)) HapticStrength=FMath::Clamp(float(Number),.1f,1.f);
@@ -908,6 +914,9 @@ void ACrankDevicePawn::SaveExperience() {
     Object->SetBoolField(TEXT("reducedMotion"),bReducedMotion); Object->SetBoolField(TEXT("crankDocked"),bCrankDocked);
     Object->SetBoolField(TEXT("immersive"),bImmersive);
     Object->SetBoolField(TEXT("englishUI"),CrankLocale::IsEnglish());
+    if(ItchService.IsValid() && ItchService->HasApiKey()) {
+        Object->SetStringField(TEXT("itchApiKey"),ItchService->GetApiKey());
+    }
     Object->SetNumberField(TEXT("motionSensitivity"),MotionSensitivity); Object->SetNumberField(TEXT("hapticStrength"),HapticStrength);
     Object->SetNumberField(TEXT("frameRate"),FrameRate); Object->SetNumberField(TEXT("resolutionScale"),ResolutionScale);
     TArray<TSharedPtr<FJsonValue>> Recent; for(const auto& Path:RecentGames) Recent.Add(MakeShared<FJsonValueString>(Path));

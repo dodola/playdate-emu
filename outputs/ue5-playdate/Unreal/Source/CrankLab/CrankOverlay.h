@@ -19,6 +19,11 @@ private:
     TSharedRef<SWidget> Action(const TAttribute<FText>& Label,TFunction<FReply()> Callback,bool AllowBusy=false,ECrankGlyph Icon=ECrankGlyph::Library,TFunction<bool()> Selected=nullptr,bool ShowIcon=true,bool Toolbar=false);
     TSharedRef<SWidget> BuildSettings();
     TSharedRef<SWidget> BuildTranslationSettings();
+    TSharedRef<SWidget> BuildItchSettings();
+    FReply OnPasteItchApiKey();
+    FReply OnSyncItchLibrary();
+    FReply OnClearItchAccount();
+    FText GetItchStatusText() const;
     FReply ToggleSettings();
     FReply ClosePanels();
     FReply ToggleLibrary();
