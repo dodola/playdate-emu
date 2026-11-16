@@ -77,7 +77,7 @@ void FCrankTranslation::ConfigureModel() {
 #endif
     bModelReady=LocalSupported() && IFileManager::Get().FileSize(*ModelPath)==LocalModelSize;
     bModelVerified=bModelReady && ReadVerifiedMarker();
-    ModelStatus.Empty();ModelState=bModelReady?TEXT("ready"):TEXT("missing");
+    ModelNotice=EModelNotice::None;ModelState=bModelReady?TEXT("ready"):TEXT("missing");
 }
 bool FCrankTranslation::ReadVerifiedMarker() const {
     FString Text;if(!FFileHelper::LoadFileToString(Text,*(ModelPath+TEXT(".verified"))))return false;
@@ -112,11 +112,24 @@ bool FCrankTranslation::SelectProvider(const FString& P) {
     auto O=MakeShared<FJsonObject>();O->SetStringField(TEXT("provider"),Provider);
     if(!SaveJson(Storage/TEXT("provider.json"),Encode(O))){Status=TEXT("翻译服务已切换，但设置未能保存。");return false;}return true;
 }
-FString FCrankTranslation::ProviderMessage() const {
-    return Provider==TEXT("auto")?(LocalSupported()?TEXT("模型已下载时在本机翻译，失败或超时改用微软、腾讯在线翻译。已缓存译文可离线阅读。"):TEXT("优先使用微软；不可用时尝试腾讯。首次翻译需联网，已缓存译文可离线阅读。"))
-        :Provider==TEXT("local")?TEXT("只在本机翻译，介绍文本不会发送到网络。需先下载约 1 GiB 模型。")
-        :Provider==TEXT("microsoft")?TEXT("使用微软在线翻译。无需下载模型，已缓存译文可离线阅读。")
-        :TEXT("使用腾讯在线翻译。无需下载模型，已缓存译文可离线阅读。");
+FString FCrankTranslation::ProviderMessage(bool bEnglish) const {
+    if(Provider==TEXT("auto")) {
+        if(LocalSupported()) return bEnglish
+            ? TEXT("Uses the local model when available. If it fails or times out, tries Microsoft and Tencent online. Cached translations are available offline.")
+            : TEXT("模型已下载时在本机翻译，失败或超时改用微软、腾讯在线翻译。已缓存译文可离线阅读。");
+        return bEnglish
+            ? TEXT("Tries Microsoft first, then Tencent. The first translation needs an internet connection. Cached translations are available offline.")
+            : TEXT("优先使用微软；不可用时尝试腾讯。首次翻译需联网，已缓存译文可离线阅读。");
+    }
+    if(Provider==TEXT("local")) return bEnglish
+        ? TEXT("Translates on this device without sending descriptions online. Download the 1 GiB model first.")
+        : TEXT("只在本机翻译，介绍文本不会发送到网络。需先下载约 1 GiB 模型。");
+    if(Provider==TEXT("microsoft")) return bEnglish
+        ? TEXT("Uses Microsoft online translation. No model download is needed. Cached translations are available offline.")
+        : TEXT("使用微软在线翻译。无需下载模型，已缓存译文可离线阅读。");
+    return bEnglish
+        ? TEXT("Uses Tencent online translation. No model download is needed. Cached translations are available offline.")
+        : TEXT("使用腾讯在线翻译。无需下载模型，已缓存译文可离线阅读。");
 }
 void FCrankTranslation::Open(int32 CatalogId) {
     if(bClosed || CatalogId<=0)return;
@@ -290,7 +303,7 @@ void FCrankTranslation::FinishLocal(FResult R) {
         }
     }
     if(R.Error==TEXT("model_invalid")){
-        bModelReady=bModelVerified=false;ModelState=TEXT("error");ModelStatus=TEXT("模型校验失败，请重新下载。");
+        bModelReady=bModelVerified=false;ModelState=TEXT("error");ModelNotice=EModelNotice::VerifyFailed;
         IFileManager::Get().Delete(*(ModelPath+TEXT(".verified")),false,true);
     }
     if(FallsBackToOnline(Provider)){FallBackToOnline(*R.Error);return;}
@@ -406,14 +419,14 @@ void FCrankTranslation::ReleaseModel() {WarmModelDeadline=0;if(NativeRelease)Nat
 void FCrankTranslation::DownloadModel() {
     if(bClosed || bModelReady || IsModelBusy() || ModelCheck.IsValid() || !LocalSupported())return;
 #if PLATFORM_ANDROID
-    if(!CrankModelDownload::HasWifi()){ModelState=TEXT("wifi");ModelStatus=TEXT("模型仅通过 Wi-Fi 下载，请连接可联网的 Wi-Fi 后重试。");return;}
-    if(!LoadNative()){ModelState=TEXT("error");ModelStatus=TEXT("翻译组件无法加载，请重新安装应用。");return;}
+    if(!CrankModelDownload::HasWifi()){ModelState=TEXT("wifi");ModelNotice=EModelNotice::WifiRequired;return;}
+    if(!LoadNative()){ModelState=TEXT("error");ModelNotice=EModelNotice::ComponentMissing;return;}
     const FString Folder=FPaths::GetPath(ModelPath);IFileManager::Get().MakeDirectory(*Folder,true);
     uint64 Total=0,Free=0;
-    if(FPlatformMisc::GetDiskTotalAndFreeSpace(Folder,Total,Free) && Free<uint64(LocalModelSize+128*1024*1024)){ModelState=TEXT("error");ModelStatus=TEXT("存储空间不足，请至少留出 1.2 GiB 后重试。");return;}
+    if(FPlatformMisc::GetDiskTotalAndFreeSpace(Folder,Total,Free) && Free<uint64(LocalModelSize+128*1024*1024)){ModelState=TEXT("error");ModelNotice=EModelNotice::LowStorage;return;}
     const uint64 Version=++ModelRevision;ModelPartial=ModelPath+FString::Printf(TEXT(".part-%llu"),Version);
     ModelBytes=MakeShared<TAtomic<int64>,ESPMode::ThreadSafe>(0);
-    ModelState=TEXT("downloading");ModelStatus.Empty();ModelControl=MakeShared<FControl,ESPMode::ThreadSafe>();
+    ModelState=TEXT("downloading");ModelNotice=EModelNotice::None;ModelControl=MakeShared<FControl,ESPMode::ThreadSafe>();
     FString Url=LocalModelUrl;
 #if !UE_BUILD_SHIPPING
     FParse::Value(FCommandLine::Get(),TEXT("CrankTranslationModelUrl="),Url);
@@ -421,13 +434,13 @@ void FCrankTranslation::DownloadModel() {
     AndroidModelJob=CrankModelDownload::Begin(Url,ModelPartial,LocalModelSize);ModelPollTime=0;
     if(AndroidModelJob<=0) {
         ModelState=AndroidModelJob==-1?TEXT("wifi"):TEXT("error");
-        ModelStatus=AndroidModelJob==-1?TEXT("模型仅通过 Wi-Fi 下载，请连接可联网的 Wi-Fi 后重试。"):TEXT("无法开始下载，请重试。");AndroidModelJob=0;ModelPartial.Empty();
+        ModelNotice=AndroidModelJob==-1?EModelNotice::WifiRequired:EModelNotice::StartFailed;AndroidModelJob=0;ModelPartial.Empty();
     }
 #endif
 }
 void FCrankTranslation::VerifyDownloadedModel(const FString& Partial) {
     if(!ModelBytes || ModelBytes->Load()!=LocalModelSize || IFileManager::Get().FileSize(*Partial)!=LocalModelSize) {
-        IFileManager::Get().Delete(*Partial,false,true);ModelPartial.Empty();ModelState=TEXT("error");ModelStatus=TEXT("模型文件不完整，请重新下载。");return;
+        IFileManager::Get().Delete(*Partial,false,true);ModelPartial.Empty();ModelState=TEXT("error");ModelNotice=EModelNotice::Incomplete;return;
     }
     ModelState=TEXT("verifying");ModelCheckPartial=Partial;const auto Verify=NativeVerify;const auto C=ModelControl;
     ModelCheck=Async(EAsyncExecution::Thread,[Partial,Verify,C] {return Verify && Verify(TCHAR_TO_UTF8(*Partial),+[](void* P)->int{return static_cast<FControl*>(P)->Cancelled.Load()?1:0;},C.Get())==0;});
@@ -438,7 +451,7 @@ void FCrankTranslation::CancelModelDownload() {
     if(AndroidModelJob){CrankModelDownload::Cancel(AndroidModelJob);CrankModelDownload::Release(AndroidModelJob);AndroidModelJob=0;}
 #endif
     if(!ModelPartial.IsEmpty() && ModelPartial!=ModelCheckPartial){IFileManager::Get().Delete(*ModelPartial,false,true);ModelPartial.Empty();}
-    if(ModelState==TEXT("downloading") || ModelState==TEXT("verifying")){ModelState=bModelReady?TEXT("ready"):TEXT("missing");ModelStatus=TEXT("已取消下载，可重新下载。");}
+    if(ModelState==TEXT("downloading") || ModelState==TEXT("verifying")){ModelState=bModelReady?TEXT("ready"):TEXT("missing");ModelNotice=EModelNotice::Cancelled;}
 }
 void FCrankTranslation::Tick() {
     if(WarmModelDeadline>0 && FPlatformTime::Seconds()>=WarmModelDeadline && !Task.IsValid())ReleaseModel();
@@ -461,7 +474,7 @@ void FCrankTranslation::Tick() {
             if(Download.State==2)VerifyDownloadedModel(ModelPartial);
             else {
                 ModelState=Download.State==3?TEXT("wifi"):TEXT("error");
-                ModelStatus=Download.State==3?TEXT("Wi-Fi 已断开，下载已停止。连接 Wi-Fi 后可重试。"):TEXT("模型下载失败，请检查网络和空间后重试。");
+                ModelNotice=Download.State==3?EModelNotice::WifiLost:EModelNotice::DownloadFailed;
                 IFileManager::Get().Delete(*ModelPartial,false,true);ModelPartial.Empty();
             }
         }
@@ -471,9 +484,9 @@ void FCrankTranslation::Tick() {
         const bool Ok=ModelCheck.Get();ModelCheck=TFuture<bool>();const FString Partial=ModelCheckPartial;ModelCheckPartial.Empty();if(ModelPartial==Partial)ModelPartial.Empty();
         if(!bClosed && ModelState==TEXT("verifying") && Ok && IFileManager::Get().Move(*ModelPath,*Partial,true,true)) {
             bModelReady=bModelVerified=true;WriteVerifiedMarker();if(NativeTrust)NativeTrust(TCHAR_TO_UTF8(*ModelPath));
-            ModelState=TEXT("ready");ModelStatus=TEXT("模型已就绪，可离线翻译。");
+            ModelState=TEXT("ready");ModelNotice=EModelNotice::Ready;
             if(bTranslationRequested && State==TEXT("ready") && !Source.IsEmpty() && Provider!=TEXT("microsoft") && Provider!=TEXT("tencent"))Translate();
-        }else{IFileManager::Get().Delete(*Partial,false,true);if(ModelState==TEXT("verifying")){ModelState=TEXT("error");ModelStatus=TEXT("模型校验失败，请重新下载。");}}
+        }else{IFileManager::Get().Delete(*Partial,false,true);if(ModelState==TEXT("verifying")){ModelState=TEXT("error");ModelNotice=EModelNotice::VerifyFailed;}}
     }
 }
 FString FCrankTranslation::Message() const {
@@ -481,20 +494,52 @@ FString FCrankTranslation::Message() const {
         return FString::Printf(TEXT("正在本机翻译 · 第 %d / %d 段"),Control->Part.Load(),Control->Total.Load());
     return Status;
 }
-FString FCrankTranslation::ModelMessage() const {
-    if(!LocalSupported())return TEXT("此设备仅支持在线翻译。");
+FString FCrankTranslation::ModelMessage(bool bEnglish) const {
+    const auto Tr=[bEnglish](const TCHAR* Zh,const TCHAR* En){return bEnglish ? En : Zh;};
+    if(!LocalSupported()) return Tr(TEXT("此设备仅支持在线翻译。"),TEXT("This device supports online translation only."));
     if(ModelState==TEXT("downloading")) {
         const int64 Bytes=ModelBytes?FMath::Clamp(ModelBytes->Load(),int64(0),LocalModelSize):0;
-        if(!Bytes)return TEXT("正在连接模型下载…");
-        return FString::Printf(TEXT("下载模型 · %d%% · %.1f / %.1f MiB"),FMath::FloorToInt(100.0*Bytes/LocalModelSize),Bytes/1048576.0,LocalModelSize/1048576.0);
+        if(!Bytes) return Tr(TEXT("正在连接模型下载…"),TEXT("Connecting to download the model…"));
+        const int32 Percent=FMath::FloorToInt(100.0*Bytes/LocalModelSize);
+        return bEnglish
+            ? FString::Printf(TEXT("Downloading model · %d%% · %.1f / %.1f MiB"),Percent,Bytes/1048576.0,LocalModelSize/1048576.0)
+            : FString::Printf(TEXT("下载模型 · %d%% · %.1f / %.1f MiB"),Percent,Bytes/1048576.0,LocalModelSize/1048576.0);
     }
-    if(ModelState==TEXT("verifying"))return TEXT("正在校验模型文件…");
-    if(!ModelStatus.IsEmpty())return ModelStatus;
-    return bModelReady?TEXT("本地模型已就绪 · 支持离线翻译")
-        :TEXT("本地模型约 1.0 GiB；仅通过 Wi-Fi 下载，之后可离线翻译。支持的骁龙设备可使用 NPU 加速。");
+    if(ModelState==TEXT("verifying")) return Tr(TEXT("正在校验模型文件…"),TEXT("Verifying the model file…"));
+
+    switch(ModelNotice) {
+    case EModelNotice::VerifyFailed:
+        return Tr(TEXT("模型校验失败，请重新下载。"),TEXT("Model verification failed. Download the model again."));
+    case EModelNotice::WifiRequired:
+        return Tr(TEXT("模型仅通过 Wi-Fi 下载，请连接可联网的 Wi-Fi 后重试。"),TEXT("Connect to Wi-Fi with internet access, then retry the download."));
+    case EModelNotice::ComponentMissing:
+        return Tr(TEXT("翻译组件无法加载，请重新安装应用。"),TEXT("Could not load the translation component. Reinstall the app."));
+    case EModelNotice::LowStorage:
+        return Tr(TEXT("存储空间不足，请至少留出 1.2 GiB 后重试。"),TEXT("Free at least 1.2 GiB of storage, then retry."));
+    case EModelNotice::StartFailed:
+        return Tr(TEXT("无法开始下载，请重试。"),TEXT("The download could not start. Try again."));
+    case EModelNotice::Incomplete:
+        return Tr(TEXT("模型文件不完整，请重新下载。"),TEXT("The model file is incomplete. Download it again."));
+    case EModelNotice::Cancelled:
+        return Tr(TEXT("已取消下载，可重新下载。"),TEXT("Download canceled. You can start it again."));
+    case EModelNotice::WifiLost:
+        return Tr(TEXT("Wi-Fi 已断开，下载已停止。连接 Wi-Fi 后可重试。"),TEXT("The download stopped when Wi-Fi disconnected. Reconnect to Wi-Fi and try again."));
+    case EModelNotice::DownloadFailed:
+        return Tr(TEXT("模型下载失败，请检查网络和空间后重试。"),TEXT("Model download failed. Check your connection and free storage, then try again."));
+    case EModelNotice::Ready:
+        return Tr(TEXT("模型已就绪，可离线翻译。"),TEXT("The model is ready for offline translation."));
+    case EModelNotice::None:
+        return bModelReady
+            ? Tr(TEXT("本地模型已就绪 · 支持离线翻译"),TEXT("Local model ready · Offline translation available"))
+            : Tr(TEXT("本地模型约 1.0 GiB；仅通过 Wi-Fi 下载，之后可离线翻译。支持的骁龙设备可使用 NPU 加速。"),
+                TEXT("Download the 1.0 GiB model over Wi-Fi for offline translation. Supported Snapdragon devices can use the NPU."));
+    }
+    return FString();
 }
-FString FCrankTranslation::ModelDownloadLabel() const {
-    return IsModelBusy()?TEXT("取消下载"):HasModelError()?TEXT("重新下载模型"):TEXT("下载本地翻译模型");
+FString FCrankTranslation::ModelDownloadLabel(bool bEnglish) const {
+    if(IsModelBusy()) return bEnglish ? TEXT("Cancel Download") : TEXT("取消下载");
+    if(HasModelError()) return bEnglish ? TEXT("Retry Model Download") : TEXT("重新下载模型");
+    return bEnglish ? TEXT("Download Local Model") : TEXT("下载本地翻译模型");
 }
 TOptional<float> FCrankTranslation::ModelProgress() const {
     return ModelState==TEXT("downloading") && ModelBytes?TOptional<float>(float(FMath::Clamp(double(ModelBytes->Load())/LocalModelSize,0.0,1.0))):TOptional<float>();

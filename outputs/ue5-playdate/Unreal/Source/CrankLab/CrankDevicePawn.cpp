@@ -885,12 +885,15 @@ void ACrankDevicePawn::UpdateMotion(float DeltaTime) {
     MotionOrbit=FMath::Lerp(MotionOrbit,Target,CrankView::SmoothAlpha(9,DeltaTime));
 }
 void ACrankDevicePawn::LoadExperience() {
+    CrankLocale::SetEnglish(false);
     FString Text; TSharedPtr<FJsonObject> Object;
     if(!FFileHelper::LoadFileToString(Text,*ExperienceFile) || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text),Object)) return;
     Object->TryGetBoolField(TEXT("motionFollow"),bMotionFollow); Object->TryGetBoolField(TEXT("haptics"),bHaptics);
     Object->TryGetBoolField(TEXT("reducedMotion"),bReducedMotion); Object->TryGetBoolField(TEXT("crankDocked"),bCrankDocked);
     Object->TryGetBoolField(TEXT("immersive"),bImmersive);
-    bool bEnglishUI=false; if(Object->TryGetBoolField(TEXT("englishUI"),bEnglishUI)) CrankLocale::SetEnglish(bEnglishUI);
+    bool bEnglishUI=false;
+    Object->TryGetBoolField(TEXT("englishUI"),bEnglishUI);
+    CrankLocale::SetEnglish(bEnglishUI);
     double Number;
     if(Object->TryGetNumberField(TEXT("motionSensitivity"),Number) && FMath::IsFinite(Number)) MotionSensitivity=FMath::Clamp(float(Number),.1f,.8f);
     if(Object->TryGetNumberField(TEXT("hapticStrength"),Number) && FMath::IsFinite(Number)) HapticStrength=FMath::Clamp(float(Number),.1f,1.f);

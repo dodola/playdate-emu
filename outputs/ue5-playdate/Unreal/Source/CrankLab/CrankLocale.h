@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "Misc/Attribute.h"
 
 namespace CrankLocale {
     enum class ELanguage : uint8 {
@@ -24,7 +25,9 @@ namespace CrankLocale {
         return IsEnglish() ? En : Zh;
     }
 
-    inline FString Tr(const FString& Zh, const FString& En) {
-        return IsEnglish() ? En : Zh;
+    inline TAttribute<FText> Text(const TCHAR* Zh, const TCHAR* En) {
+        return TAttribute<FText>::CreateLambda([Chinese=FText::FromString(Zh),English=FText::FromString(En)] {
+            return IsEnglish() ? English : Chinese;
+        });
     }
 }

@@ -20,7 +20,7 @@ public:
     void Shutdown();
     bool SelectProvider(const FString& Provider);
     FString GetProvider() const {return Provider;}
-    FString ProviderMessage() const;
+    FString ProviderMessage(bool bEnglish) const;
     // Local model management (Android only; other platforms stay online).
     static bool LocalSupported();
     void DownloadModel();
@@ -30,8 +30,8 @@ public:
     bool IsModelBusy() const {return ModelState==TEXT("downloading") || ModelState==TEXT("verifying");}
     bool HasModelError() const {return ModelState==TEXT("error");}
     FString GetModelState() const {return ModelState;}
-    FString ModelMessage() const;
-    FString ModelDownloadLabel() const;
+    FString ModelMessage(bool bEnglish) const;
+    FString ModelDownloadLabel(bool bEnglish) const;
     TOptional<float> ModelProgress() const;
     bool IsBusy() const {return DetailRequest.IsValid() || TranslationRequest.IsValid() || Task.IsValid();}
     bool HasError() const {return State==TEXT("error");}
@@ -62,7 +62,10 @@ private:
     double RequestStarted=0;
     TSharedPtr<IHttpRequest,ESPMode::ThreadSafe> DetailRequest,TranslationRequest;
     // Local model.
-    FString ModelPath,ModelPartial,ModelCheckPartial,BackendPath,HtpPath,ModelState=TEXT("missing"),ModelStatus;
+    FString ModelPath,ModelPartial,ModelCheckPartial,BackendPath,HtpPath,ModelState=TEXT("missing");
+    enum class EModelNotice { None, VerifyFailed, WifiRequired, ComponentMissing, LowStorage,
+        StartFailed, Incomplete, Cancelled, WifiLost, DownloadFailed, Ready };
+    EModelNotice ModelNotice=EModelNotice::None;
     uint64 ModelRevision=0;
     int64 AndroidModelJob=0;
     double ModelPollTime=0,WarmModelDeadline=0,LocalStarted=0;

@@ -48,7 +48,10 @@ int32 SCrankSystemScreen::OnPaint(const FPaintArgs& Args,const FGeometry& G,cons
             FSlateBrush Card; Card.SetResourceObject(Cover); Card.ImageSize=FVector2D(Cover->GetSizeX(),Cover->GetSizeY()); Card.DrawAs=ESlateBrushDrawType::Image;
             FSlateDrawElement::MakeBox(E,ImageLayer,G.ToPaintGeometry(DrawSize,FSlateLayoutTransform((FVector2D(400,166)-DrawSize)*.5+FVector2D(0,40))),&Card);
             Rect({12,219},{376,1},true);
-            Text(FString::Printf(CrankLocale::Tr(TEXT("上下切换  %d/%d     A 启动"),TEXT("Switch %d/%d     A: Launch")),SelectedGame+1,Games.Num()),{12,224},11);
+            const FString Footer=CrankLocale::IsEnglish()
+                ? FString::Printf(TEXT("Switch %d/%d     A: Launch"),SelectedGame+1,Games.Num())
+                : FString::Printf(TEXT("上下切换  %d/%d     A 启动"),SelectedGame+1,Games.Num());
+            Text(Footer,{12,224},11);
             return TextLayer;
         }
     }
