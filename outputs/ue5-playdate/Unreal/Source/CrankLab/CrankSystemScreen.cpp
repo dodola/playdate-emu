@@ -1,5 +1,6 @@
 #include "CrankSystemScreen.h"
 #include "CrankDevicePawn.h"
+#include "CrankLocale.h"
 #include "CrankRuntimeComponent.h"
 #include "Styling/CoreStyle.h"
 #include "Brushes/SlateColorBrush.h"
@@ -24,15 +25,15 @@ int32 SCrankSystemScreen::OnPaint(const FPaintArgs& Args,const FGeometry& G,cons
     const auto Mode=Device->GetSystemMode();
     if(Mode==ECrankSystemMode::Boot || Mode==ECrankSystemMode::Loading) {
         Text(TEXT("Playdate"),{136,72},28,true,true);
-        Text(Mode==ECrankSystemMode::Boot ? TEXT("正在启动掌机") : TEXT("正在载入游戏"),{130,116},16);
+        Text(Mode==ECrankSystemMode::Boot ? CrankLocale::Tr(TEXT("正在启动掌机"),TEXT("Starting Playdate")) : CrankLocale::Tr(TEXT("正在载入游戏"),TEXT("Loading Game")),{130,116},16);
         if(Mode==ECrankSystemMode::Loading) Text(Device->GetGameTitle().Left(24),{24,163},14);
         for(int I=0;I<5;I++) Rect({float(163+I*16),144},{8,8},I<=int(FPlatformTime::Seconds()*5)%5);
         return TextLayer;
     }
     if(Mode==ECrankSystemMode::Locked) {
         Text(FDateTime::Now().ToString(TEXT("%H:%M")),{102,62},48,true,true);
-        Text(TEXT("已锁定"),{173,132},16);
-        Text(TEXT("按电源键或点按屏幕继续"),{101,190},14);
+        Text(CrankLocale::Tr(TEXT("已锁定"),TEXT("Locked")),{173,132},16);
+        Text(CrankLocale::Tr(TEXT("按电源键或点按屏幕继续"),TEXT("Press Power or tap to unlock")),{101,190},14);
         return TextLayer;
     }
     const bool Menu=Mode==ECrankSystemMode::Menu;
@@ -47,7 +48,10 @@ int32 SCrankSystemScreen::OnPaint(const FPaintArgs& Args,const FGeometry& G,cons
             FSlateBrush Card; Card.SetResourceObject(Cover); Card.ImageSize=FVector2D(Cover->GetSizeX(),Cover->GetSizeY()); Card.DrawAs=ESlateBrushDrawType::Image;
             FSlateDrawElement::MakeBox(E,ImageLayer,G.ToPaintGeometry(DrawSize,FSlateLayoutTransform((FVector2D(400,166)-DrawSize)*.5+FVector2D(0,40))),&Card);
             Rect({12,219},{376,1},true);
-            Text(FString::Printf(TEXT("上下切换  %d/%d     A 启动"),SelectedGame+1,Games.Num()),{12,224},11);
+            const FString Footer=CrankLocale::IsEnglish()
+                ? FString::Printf(TEXT("Switch %d/%d     A: Launch"),SelectedGame+1,Games.Num())
+                : FString::Printf(TEXT("上下切换  %d/%d     A 启动"),SelectedGame+1,Games.Num());
+            Text(Footer,{12,224},11);
             return TextLayer;
         }
     }
@@ -62,7 +66,7 @@ int32 SCrankSystemScreen::OnPaint(const FPaintArgs& Args,const FGeometry& G,cons
         }
         Rect({200,0},{200,240},false); Rect({199,0},{1,240},true);
     }
-    Text(Menu ? TEXT("系统菜单") : TEXT("我的掌机"),{float(X+12),8},18,true,true);
+    Text(Menu ? CrankLocale::Tr(TEXT("系统菜单"),TEXT("System Menu")) : CrankLocale::Tr(TEXT("我的掌机"),TEXT("Playdate")),{float(X+12),8},18,true,true);
     Rect({float(X+10),32},{float(Width-20),1},true);
     const auto Rows=Device->GetSystemRows();
     const int Selected=Device->GetSystemSelection(), Visible=Menu ? 7 : 5;
@@ -76,6 +80,6 @@ int32 SCrankSystemScreen::OnPaint(const FPaintArgs& Args,const FGeometry& G,cons
     }
     E.PopClip();
     Rect({float(X+10),222},{float(Width-20),1},true);
-    Text(Menu ? TEXT("A 选择  B 返回") : TEXT("A 启动   MENU 游戏库"),{float(X+12),225},11);
+    Text(Menu ? CrankLocale::Tr(TEXT("A 选择  B 返回"),TEXT("A: Select  B: Back")) : CrankLocale::Tr(TEXT("A 启动   MENU 游戏库"),TEXT("A: Launch   MENU: Library")),{float(X+12),225},11);
     return TextLayer;
 }

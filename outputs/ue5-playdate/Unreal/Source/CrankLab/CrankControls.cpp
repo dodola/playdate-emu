@@ -1,4 +1,5 @@
 #include "CrankControls.h"
+#include "CrankLocale.h"
 #include "CrankTheme.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
@@ -90,7 +91,8 @@ int32 SCrankAction::OnPaint(const FPaintArgs& Args,const FGeometry& G,const FSla
 }
 void SCrankDial::Construct(const FArguments& Args) {
     Device=Args._Device; SetCursor(EMouseCursor::Hand);
-    SetToolTipText(FText::FromString(TEXT("拖动圆盘转动摇柄；方向键每次转动 15°，Q/E 可持续转动")));
+    SetToolTipText(CrankLocale::Text(TEXT("拖动圆盘转动摇柄；方向键每次转动 15°，Q/E 可持续转动"),
+        TEXT("Drag the dial to turn the crank. Arrow keys turn it 15° at a time. Hold Q or E to keep turning.")));
 }
 int32 SCrankDial::OnPaint(const FPaintArgs&,const FGeometry& G,const FSlateRect&,FSlateWindowElementList& Out,int32 Layer,const FWidgetStyle& Style,bool Enabled) const {
     const FVector2D Size=G.GetLocalSize(), Center=Size*.5;

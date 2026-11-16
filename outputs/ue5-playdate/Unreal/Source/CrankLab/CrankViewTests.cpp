@@ -1,7 +1,11 @@
 #include "CrankViewState.h"
 #include "CrankImmersiveLayout.h"
 #if WITH_DEV_AUTOMATION_TESTS
+#include "CrankLocale.h"
+#include "CrankOverlay.h"
+#include "Layout/Children.h"
 #include "Misc/AutomationTest.h"
+#include "Widgets/Text/STextBlock.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCrankImmersiveLayoutTest,"CrankLab.Immersive.LayoutAndInput",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
 bool FCrankImmersiveLayoutTest::RunTest(const FString&) {
@@ -76,6 +80,39 @@ bool FCrankMotionMathTest::RunTest(const FString&) {
     }
     TestEqual(TEXT("Sensor jitter stays inside the dead zone"),CrankView::DeadZone(.6f,.7f),0.f);
     TestTrue(TEXT("Negative tilt keeps its direction"),CrankView::DeadZone(-2,.7f)<0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCrankLocaleTest,"CrankLab.Localization.LiveOverlay",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FCrankLocaleTest::RunTest(const FString&) {
+    const bool bPreviousLanguage=CrankLocale::IsEnglish();
+    CrankLocale::SetEnglish(false);
+    const auto Overlay=SNew(SCrankOverlay);
+    Overlay->ShowSettings();
+
+    const auto CollectText=[](const auto& Self,SWidget& Widget,TSet<FString>& Labels) -> void {
+        if(Widget.GetType()==FName(TEXT("STextBlock"))) {
+            Labels.Add(static_cast<STextBlock&>(Widget).GetText().ToString());
+        }
+        FChildren* Children=Widget.GetChildren();
+        for(int32 Index=0;Index<Children->Num();++Index) {
+            Self(Self,Children->GetChildAt(Index).Get(),Labels);
+        }
+    };
+    const auto Verify=[&](bool bEnglish) {
+        CrankLocale::SetEnglish(bEnglish);
+        Overlay->SlatePrepass(1.f);
+        TSet<FString> Labels;
+        CollectText(CollectText,Overlay.Get(),Labels);
+        TestTrue(TEXT("The existing toolbar updates"),Labels.Contains(bEnglish ? TEXT("Settings") : TEXT("设置")));
+        TestTrue(TEXT("The existing drawer updates"),Labels.Contains(bEnglish ? TEXT("Immersive Mode") : TEXT("沉浸式模式")));
+        TestTrue(TEXT("The provider choices update"),Labels.Contains(bEnglish ? TEXT("Auto Select") : TEXT("自动选择")));
+        TestTrue(TEXT("The sensitivity value keeps its percent sign"),Labels.Contains(bEnglish ? TEXT("Motion Sensitivity  35%") : TEXT("跟随灵敏度  35%")));
+    };
+    Verify(false);
+    Verify(true);
+    Verify(false);
+    CrankLocale::SetEnglish(bPreviousLanguage);
     return true;
 }
 #endif

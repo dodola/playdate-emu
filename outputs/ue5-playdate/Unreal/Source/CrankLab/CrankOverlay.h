@@ -16,7 +16,7 @@ public:
     virtual FReply OnKeyDown(const FGeometry& Geometry,const FKeyEvent& Event) override;
     void Tick(const FGeometry& Geometry,double Time,float DeltaTime) override;
 private:
-    TSharedRef<SWidget> Action(const FString& Label,TFunction<FReply()> Callback,bool AllowBusy=false,ECrankGlyph Icon=ECrankGlyph::Library,TFunction<bool()> Selected=nullptr,bool ShowIcon=true,bool Toolbar=false);
+    TSharedRef<SWidget> Action(const TAttribute<FText>& Label,TFunction<FReply()> Callback,bool AllowBusy=false,ECrankGlyph Icon=ECrankGlyph::Library,TFunction<bool()> Selected=nullptr,bool ShowIcon=true,bool Toolbar=false);
     TSharedRef<SWidget> BuildSettings();
     TSharedRef<SWidget> BuildTranslationSettings();
     FReply ToggleSettings();

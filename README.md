@@ -2,6 +2,10 @@
   <img src="docs/assets/playdate-cover.svg" alt="Playdate — Android、Switch 与 Linux 上的黄色小掌机" width="100%">
 </p>
 
+<p align="center">
+  <a href="README.en.md"><strong>English</strong></a> &nbsp; | &nbsp; <a href="README.md"><strong>简体中文</strong></a>
+</p>
+
 <h1 align="center">Playdate</h1>
 
 <p align="center">
